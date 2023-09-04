@@ -24,11 +24,14 @@ contract Foo {
     
     
     //Asset Index
-    uint256 internal _emissionPerSecond;
-    uint256 internal _lastUpdateTime; //for calculating pendings rewards
-
-    uint256 internal _totalStaked; // only principal staked
     uint256 internal _startTime; // for set&forget
+    uint256 internal _lastUpdateTime; //for calculating pendings rewards
+    uint256 internal _emissionPerSecond;
+    bool internal _isAutoCompounding;
+
+
+    // do i need these?
+    uint256 internal _totalStaked; // only principal staked
     uint256 internal _endTime;
 
     // EVENTS
@@ -37,7 +40,7 @@ contract Foo {
     event RewardsClaimed(address indexed from, address indexed to, uint256 amount);
     event Redeem(address indexed from, address indexed to, uint256 amount);
 
-    function setUp(uint256 startTime, uint256 duration, uint256 amount) external {
+    function setUp(uint256 startTime, uint256 duration, uint256 amount, bool isAutoCompounding) external {
         //onlyOwner
         require(_endTime < block.timestamp, "on-going distribution");
 
@@ -45,12 +48,12 @@ contract Foo {
         _endTime = startTime + duration;
 
         _emissionPerSecond = amount / duration; //duration in seconds
+        _isAutoCompounding = isAutoCompounding;
 
         //sanity checks
         require(_emissionPerSecond > 0, "reward rate = 0");
         require(_emissionPerSecond * duration <= token.balanceOf(vault), "insufficient rewards");
 
-        //_isAutoCompounding = isAutoCompounding;
     }
 
     function stake(address onBehalfOf, uint256 amount) external {
@@ -63,17 +66,20 @@ contract Foo {
         //should only run once, per block
         _harvest();
 
-        // handle emitted unclaimed rewards
-        // must remove to avoid inflation on first deposit
-        // this will run once, one the first deposit
-
         //calculate new shares
         uint256 newShares;
-        if (_totalShares > 0) {
-            newShares = (amount * _totalShares) / _totalRewards;
+        if(_isAutoCompounding){
+
+            if (_totalShares > 0) {
+                newShares = (amount * _totalShares) / _totalRewards;
+            } else {
+                newShares = amount; //1:1 ratio initally
+            }
+
         } else {
-            newShares = amount; //1:1 ratio initally
+            
         }
+
 
         //update storage
         user.principle += amount;
@@ -95,12 +101,12 @@ contract Foo {
         _harvest();
 
         // get user rewards
-        uint256 totalRewards = (user.shares * _totalRewards) / _totalShares;
+        uint256 userTotalRewards = (user.shares * _totalRewards) / _totalShares;
 
         //remove principal
-        totalRewards = totalRewards - user.principle;
+        userTotalRewards = userTotalRewards - user.principle;
 
-        if(amount < totalRewards) {
+        if(amount < userTotalRewards) {
                 revert("Insufficient rewards");
         } // or rebase
 
