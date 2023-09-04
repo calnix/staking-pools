@@ -19,10 +19,10 @@ contract Foo {
     mapping(address user => UserInfo userInfo) internal _users;
 
     uint256 internal _totalShares;
-    uint256 internal _totalRewardsHarvested; //always incremented: final value should reflect total emitted
-    uint256 internal _totalRewardsAccrued;   //increments from first deposit. accounts for rewards to users.
-    uint256 internal _totalRewardsClaimed;   //increments tracking claimed rewards
-
+    uint256 internal _totalRewards;              //increments from first deposit. accounts for rewards to users.
+    uint256 internal _totalRewardsHarvested;     //always incremented: final value should reflect total emitted
+    
+    
     //Asset Index
     uint256 internal _emissionPerSecond;
     uint256 internal _lastUpdateTime; //for calculating pendings rewards
@@ -34,6 +34,8 @@ contract Foo {
     // EVENTS
     event RewardsHarvested(address indexed token, uint256 amount);
     event Staked(address indexed from, address indexed onBehalfOf, uint256 amount);
+    event RewardsClaimed(address indexed from, address indexed to, uint256 amount);
+    event Redeem(address indexed from, address indexed to, uint256 amount);
 
     function setUp(uint256 startTime, uint256 duration, uint256 amount) external {
         //onlyOwner
@@ -51,9 +53,9 @@ contract Foo {
         //_isAutoCompounding = isAutoCompounding;
     }
 
-    function deposit(address onBehalfOf, uint256 amount) external {
+    function stake(address onBehalfOf, uint256 amount) external {
         require(block.timestamp > _startTime, "Not started");
-        require(amount > 0, "Invalid amount");
+        require(amount > 0 && onBehalfOf > address(0), "Invalid params");
 
         UserInfo storage user = _users[onBehalfOf]; //storage or mem?
 
@@ -68,7 +70,7 @@ contract Foo {
         //calculate new shares
         uint256 newShares;
         if (_totalShares > 0) {
-            newShares = (amount * _totalShares) / _totalRewardsAccrued;
+            newShares = (amount * _totalShares) / _totalRewards;
         } else {
             newShares = amount; //1:1 ratio initally
         }
@@ -81,33 +83,62 @@ contract Foo {
         // get staking tokens
         token.safeTransferFrom(msg.sender, address(this), amount);
 
-        emit Staked(msg.sender, onbehalfOf, amount);
+        emit Staked(msg.sender, onBehalfOf, amount);
     }
 
     function claimRewards(address to, uint256 amount) external {
+        require(block.timestamp > _startTime, "Not started");
         require(amount > 0 && to > address(0), "Invalid params");
-        UserInfo storage user = _users[onBehalfOf]; //storage or mem?
+        UserInfo storage user = _users[msg.sender]; //storage or mem?
 
         // get pending + update state
         _harvest();
 
         // get user rewards
-        uint256 totalRewards = (user.shares * _totalRewardsAccrued) / _totalShares;
+        uint256 totalRewards = (user.shares * _totalRewards) / _totalShares;
 
         //remove principal
-        totalRewards = totalRewards - user.principal;
+        totalRewards = totalRewards - user.principle;
 
         if(amount < totalRewards) {
                 revert("Insufficient rewards");
         } // or rebase
 
         //number of shares
-        amountInShares = amount * _totalShares / _totalRewardsAccrued;
+        uint256 amountInShares = amount * _totalShares / _totalRewards;
 
         //update storage
-        _totalRewardsAccrued -= amount;
+        _totalRewards -= amount;
         _totalShares -= amountInShares;
         user.shares -= amountInShares;
+
+
+        emit RewardsClaimed(msg.sender, to, amount);
+    }
+
+    // user specifies principle as amount, not shares.
+    function redeem(address onBehalfOf, uint256 amount) external {
+        require(block.timestamp > _startTime, "Not started");
+        require(amount > 0 && onBehalfOf > address(0), "Invalid params");
+
+        UserInfo storage user = _users[msg.sender]; //storage or mem?
+        
+        if(user.principle < amount) {
+                revert("Insufficient principle");
+        } // or rebase
+
+        //in shares
+        uint256 amountInShares = amount * _totalShares / _totalRewards;
+
+        //update storage
+        _totalShares -= amountInShares;
+        user.shares -= amountInShares;
+        user.principle -= amount;
+
+        //transfer
+        token.safeTransfer(onBehalfOf, amount);
+
+        emit Redeem(msg.sender, onBehalfOf, amount);
     }
 
     function _harvest() internal {
@@ -118,14 +149,14 @@ contract Foo {
             // update storage
             _totalRewardsHarvested += rewardsEmitted;
             if (_totalShares > 0) {
-                _totalRewardsAccrued += rewardsEmitted; // so that on first deposit, there are no rewards, inflating
+                _totalRewards += rewardsEmitted; // so that on first deposit, there are no rewards, inflating
                     // ex.rate
             }
 
             //transfer
             token.safeTransferFrom(vault, address(this), rewardsEmitted);
 
-            emit RewardsHarvested(address(stakingToken), rewardsEmitted);
+            emit RewardsHarvested(address(token), rewardsEmitted);
         }
     }
 
@@ -134,6 +165,6 @@ contract Foo {
     //////////////////////////////////////////////////////////////*/
 
     function balanceOf() public view returns (uint256) {
-        return stakingToken.balanceOf(address(this));
+        return token.balanceOf(address(this));
     }
 }
