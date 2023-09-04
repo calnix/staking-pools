@@ -8,7 +8,7 @@ contract Foo {
     using SafeERC20 for IERC20;
 
     IERC20 internal token;
-    // vault
+    IERC20 internal vault;
 
     struct UserInfo {
         uint256 principle; //denoted in asset
@@ -24,21 +24,27 @@ contract Foo {
     //Asset Index
     uint256 internal _emissionPerSecond;
     uint256 internal _totalRewardsHarvested;
-    uint256 internal _totalRewardsEmitted;
+    uint256 internal _totalRewardsAccrued;  //starts from first deposit. accounts for rewards to users.
 
     uint256 internal _totalStaked; // only principal staked
-    //uint256 internal _lastUpdateTimeStamp;
+    uint256 internal _startTime;
+    uint256 internal _endTime;
+    uint256 internal _lastUpdateTime;
+
+    // EVENTS
+    event RewardsHarvested(address indexed token, uint256 amount);
 
     function deposit(uint256 amount) external {
         UserInfo storage user = _users[msg.sender]; //storage or mem?
 
         //get rewards from vault
-        //harvest();
+        _harvest();
 
         // handle emitted unclaimed rewards
         // must remove to avoid inflation on first deposit
         if (_totalShares == 0) {
-            uint256 stockAmount = balanceOf();
+            uint256 unclaimed = _totalRewardsHarvested;
+
         }
 
         //updateUserShare
@@ -59,7 +65,16 @@ contract Foo {
         }
     }
 
-    function harvest() public returns (uint256) { }
+    function _harvest() internal returns (uint256) {
+       
+        uint256 claimableRewards = (block.timestamp - _lastUpdateTime) * _emissionPerSecond;
+
+        token.safeTransferFrom(vault, address(this), claimableRewards);
+        _totalRewardsHarvested += claimableRewards;
+
+        emit RewardsHarvested(address(token), claimableRewards);
+     }
+
 
     /*//////////////////////////////////////////////////////////////
                                 GETTERS
