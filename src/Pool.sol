@@ -8,7 +8,7 @@ contract Foo {
     using SafeERC20 for IERC20;
 
     IERC20 internal token;
-    IERC20 internal vault;
+    address internal vault;
 
     struct UserInfo {
         uint256 principle; //denoted in asset
@@ -19,68 +19,121 @@ contract Foo {
     mapping(address user => UserInfo userInfo) internal _users;
 
     uint256 internal _totalShares;
-    uint256 internal _totalRewards;
+    uint256 internal _totalRewardsHarvested; //always incremented: final value should reflect total emitted
+    uint256 internal _totalRewardsAccrued;   //increments from first deposit. accounts for rewards to users.
+    uint256 internal _totalRewardsClaimed;   //increments tracking claimed rewards
 
     //Asset Index
     uint256 internal _emissionPerSecond;
-    uint256 internal _totalRewardsHarvested;
-    uint256 internal _totalRewardsAccrued;  //starts from first deposit. accounts for rewards to users.
+    uint256 internal _lastUpdateTime; //for calculating pendings rewards
 
     uint256 internal _totalStaked; // only principal staked
-    uint256 internal _startTime;
+    uint256 internal _startTime; // for set&forget
     uint256 internal _endTime;
-    uint256 internal _lastUpdateTime;
 
     // EVENTS
     event RewardsHarvested(address indexed token, uint256 amount);
+    event Staked(address indexed from, address indexed onBehalfOf, uint256 amount);
 
-    function deposit(uint256 amount) external {
-        UserInfo storage user = _users[msg.sender]; //storage or mem?
+    function setUp(uint256 startTime, uint256 duration, uint256 amount) external {
+        //onlyOwner
+        require(_endTime < block.timestamp, "on-going distribution");
+
+        _startTime = startTime;
+        _endTime = startTime + duration;
+
+        _emissionPerSecond = amount / duration; //duration in seconds
+
+        //sanity checks
+        require(_emissionPerSecond > 0, "reward rate = 0");
+        require(_emissionPerSecond * duration <= token.balanceOf(vault), "insufficient rewards");
+
+        //_isAutoCompounding = isAutoCompounding;
+    }
+
+    function deposit(address onBehalfOf, uint256 amount) external {
+        require(block.timestamp > _startTime, "Not started");
+        require(amount > 0, "Invalid amount");
+
+        UserInfo storage user = _users[onBehalfOf]; //storage or mem?
 
         //get rewards from vault
+        //should only run once, per block
         _harvest();
 
         // handle emitted unclaimed rewards
         // must remove to avoid inflation on first deposit
-        if (_totalShares == 0) {
-            uint256 unclaimed = _totalRewardsHarvested;
+        // this will run once, one the first deposit
 
-        }
-
-        //updateUserShare
+        //calculate new shares
         uint256 newShares;
         if (_totalShares > 0) {
-            newShares = (amount * _totalShares) / _totalRewards;
+            newShares = (amount * _totalShares) / _totalRewardsAccrued;
         } else {
-            newShares = amount;
+            newShares = amount; //1:1 ratio initally
         }
 
         //update storage
-        _totalShares += newShares;
+        user.principle += amount;
         user.shares += newShares;
+        _totalShares += newShares;
 
-        // transfer in staking tokens
-        if (amount > 0) {
-            token.safeTransferFrom(msg.sender, address(this), amount);
-        }
+        // get staking tokens
+        token.safeTransferFrom(msg.sender, address(this), amount);
+
+        emit Staked(msg.sender, onbehalfOf, amount);
     }
 
-    function _harvest() internal returns (uint256) {
-       
-        uint256 claimableRewards = (block.timestamp - _lastUpdateTime) * _emissionPerSecond;
+    function claimRewards(address to, uint256 amount) external {
+        require(amount > 0 && to > address(0), "Invalid params");
+        UserInfo storage user = _users[onBehalfOf]; //storage or mem?
 
-        token.safeTransferFrom(vault, address(this), claimableRewards);
-        _totalRewardsHarvested += claimableRewards;
+        // get pending + update state
+        _harvest();
 
-        emit RewardsHarvested(address(token), claimableRewards);
-     }
+        // get user rewards
+        uint256 totalRewards = (user.shares * _totalRewardsAccrued) / _totalShares;
 
+        //remove principal
+        totalRewards = totalRewards - user.principal;
+
+        if(amount < totalRewards) {
+                revert("Insufficient rewards");
+        } // or rebase
+
+        //number of shares
+        amountInShares = amount * _totalShares / _totalRewardsAccrued;
+
+        //update storage
+        _totalRewardsAccrued -= amount;
+        _totalShares -= amountInShares;
+        user.shares -= amountInShares;
+    }
+
+    function _harvest() internal {
+        // 2 txns in the same block -> same block.timestamp
+        if (block.timestamp > _lastUpdateTime) {
+            uint256 rewardsEmitted = (block.timestamp - _lastUpdateTime) * _emissionPerSecond;
+
+            // update storage
+            _totalRewardsHarvested += rewardsEmitted;
+            if (_totalShares > 0) {
+                _totalRewardsAccrued += rewardsEmitted; // so that on first deposit, there are no rewards, inflating
+                    // ex.rate
+            }
+
+            //transfer
+            token.safeTransferFrom(vault, address(this), rewardsEmitted);
+
+            emit RewardsHarvested(address(stakingToken), rewardsEmitted);
+        }
+    }
 
     /*//////////////////////////////////////////////////////////////
                                 GETTERS
     //////////////////////////////////////////////////////////////*/
 
     function balanceOf() public view returns (uint256) {
-        return token.balanceOf(address(this));
+        return stakingToken.balanceOf(address(this));
     }
 }
