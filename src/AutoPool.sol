@@ -14,7 +14,7 @@ import {UUPSUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/prox
 /// @notice Stake TokenA, earn Token A as rewards
 /// @dev Rewards are held in rewards vault, not in the staking pool. Necessary approvals are expected.
 /// @dev Pool is only compatible with tokens of 18 dp precision.
-contract StakingPoolBase is ERC20Upgradeable, OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable, StakingPoolStorage {
+contract AutoPool is ERC20Upgradeable, OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable, StakingPoolStorage {
     using SafeERC20 for IERC20;
 
     // version number
@@ -49,10 +49,10 @@ contract StakingPoolBase is ERC20Upgradeable, OwnableUpgradeable, PausableUpgrad
      * @dev Ensure sufficient rewards are in the vault beforehand, else will revert
      * @param duration Period for which rewards are emitted (in seconds)
      * @param amount Amount of tokens in wei (18 dp precision) 
-     * @param _isAutoCompounding If true, enable compounding
+     * @param isAutoCompounding If true, enable compounding
      */
     function setUp(uint256 duration, uint256 amount, bool isAutoCompounding) external onlyOwner {
-        require(_endTime < block.timestamp, "on-going distribution");
+        //require(_endTime < block.timestamp, "on-going distribution");
 
         _emissionPerSecond = uint128(amount / duration);  
         
@@ -60,9 +60,13 @@ contract StakingPoolBase is ERC20Upgradeable, OwnableUpgradeable, PausableUpgrad
         require(_emissionPerSecond > 0, "reward rate = 0");
         require(_emissionPerSecond * duration <= REWARD_TOKEN.balanceOf(REWARDS_VAULT), "reward amount > balance");
 
-        _startTime = block.timestamp;
-        _endTime = block.timestamp + duration;  
-        _isAutoCompounding = isAutoCompounding;
+        _startTime = _lastUpdateTimestamp = uint128(block.timestamp);
+        _endTime = uint128(block.timestamp) + uint128(duration);  
+
+        if(isAutoCompounding){
+            _isAutoCompounding = isAutoCompounding;
+            _assetIndex = 1e18;
+        }
 
         emit PoolInitiated(address(REWARD_TOKEN), isAutoCompounding, _emissionPerSecond);
     }
@@ -83,7 +87,7 @@ contract StakingPoolBase is ERC20Upgradeable, OwnableUpgradeable, PausableUpgrad
         if (unbookedRewards > 0) {
 
             _accruedRewards[user] += unbookedRewards;
-            _totalRewardsStaked += unbookedRewards;
+            //_totalRewardsStaked += unbookedRewards;
 
             emit RewardsAccrued(user, unbookedRewards);
         }
@@ -125,11 +129,14 @@ contract StakingPoolBase is ERC20Upgradeable, OwnableUpgradeable, PausableUpgrad
         if(amountToClaim < unbookedRewards) {
             
             // increase total by leftover unbooked rewards from user
-            _totalRewardsStaked += unbookedRewards - amountToClaim;
+            //_totalRewardsStaked += unbookedRewards - amountToClaim;
+            _totalRewardsStaked -= amountToClaim;
 
         } else{ //unbookedRewards < amountToClaim
 
-            _totalRewardsStaked -=  amountToClaim - unbookedRewards;
+            //_totalRewardsStaked -= amountToClaim - unbookedRewards;
+            _totalRewardsStaked -= amountToClaim;
+
         }
 
         REWARD_TOKEN.safeTransferFrom(REWARDS_VAULT, to, amountToClaim);
@@ -175,10 +182,12 @@ contract StakingPoolBase is ERC20Upgradeable, OwnableUpgradeable, PausableUpgrad
                                 INTERNAL
     //////////////////////////////////////////////////////////////*/
 
-    function _getRewardsEmitted() internal returns(uint256){
+    function _getRewardsEmittedSinceUpdate() internal returns(uint256){
         require(block.timestamp >= _startTime, "not started");
 
-        return (_endTime - block.timestamp) * _emissionPerSecond;
+        uint256 currentTimestamp = block.timestamp > _endTime ? _endTime : block.timestamp;
+
+        return (currentTimestamp - _lastUpdateTimestamp) * _emissionPerSecond;
     }
 
     /// @dev Calculates user's unbooked rewards depending if compounding is enabled
@@ -190,7 +199,7 @@ contract StakingPoolBase is ERC20Upgradeable, OwnableUpgradeable, PausableUpgrad
 
         if (_isAutoCompounding) { // Rewards emitted based on principle staked amount and rewards accrued thus far.
 
-            uint256 totalStaked = totalSupply() + _getRewardsEmitted();
+            uint256 totalStaked = totalSupply() + _totalRewardsStaked;
 
             //user's unbooked rewards
             unbookedRewards = _updateUserIndex(user, userPrincipleBalance, totalStaked);
@@ -219,7 +228,7 @@ contract StakingPoolBase is ERC20Upgradeable, OwnableUpgradeable, PausableUpgrad
         uint256 newAssetIndex = _updateAssetIndex(totalStaked); 
         
         //update user index + calculate unbooked rewards
-        if(userIndex < newAssetIndex) {
+        if(userIndex != newAssetIndex) {
             if(stakedByUser > 0) {
                 accruedRewards = _calculateRewards(stakedByUser, newAssetIndex, userIndex);
             }
@@ -233,7 +242,7 @@ contract StakingPoolBase is ERC20Upgradeable, OwnableUpgradeable, PausableUpgrad
 
     /**
      * @dev Check if asset index is in need of updating to bring it in-line to present conditions
-     * @param totalStaked Total staked supply 
+     * @param totalStaked Total staked supply at lastUpdateTimestamp
      * @return newAssetIndex Latest asset index
      */
     function _updateAssetIndex(uint256 totalStaked) internal returns(uint256) {
@@ -246,7 +255,7 @@ contract StakingPoolBase is ERC20Upgradeable, OwnableUpgradeable, PausableUpgrad
         //totalStaked must include rewards in compounding
         uint256 newAssetIndex = _calculateAssetIndex(oldAssetIndex, _emissionPerSecond, _lastUpdateTimestamp, totalStaked); 
 
-        if (newAssetIndex > oldAssetIndex) {
+        if (newAssetIndex != oldAssetIndex) {
             _assetIndex = newAssetIndex;
             emit AssetIndexUpdated(address(REWARD_TOKEN), newAssetIndex);
         }
@@ -264,7 +273,7 @@ contract StakingPoolBase is ERC20Upgradeable, OwnableUpgradeable, PausableUpgrad
      * @param totalBalance Total staked supply 
      * @return newassetIndex Latest asset index
      */
-    function _calculateAssetIndex(uint256 currentAssetIndex, uint256 _emissionPerSecond, uint128 _lastUpdateTimestamp, uint256 totalBalance) internal view returns(uint256) {
+    function _calculateAssetIndex(uint256 currentAssetIndex, uint256 _emissionPerSecond, uint128 _lastUpdateTimestamp, uint256 totalBalance) public returns(uint256) {
 
         if(
             _emissionPerSecond == 0 ||                        // 0 emissions. setup() not executed. 
@@ -279,8 +288,10 @@ contract StakingPoolBase is ERC20Upgradeable, OwnableUpgradeable, PausableUpgrad
         uint256 timeDelta = currentTimestamp - _lastUpdateTimestamp;
 
         if(_isAutoCompounding){
+            
+            _totalRewardsStaked += _emissionPerSecond * timeDelta;
 
-            return (_emissionPerSecond * timeDelta * currentAssetIndex) / totalBalance;
+            return (_emissionPerSecond * timeDelta * currentAssetIndex) / totalBalance; ///@audit precision
             
         }else{
             return ((_emissionPerSecond * timeDelta * 10**PRECISION) / totalBalance) + currentAssetIndex;
@@ -294,11 +305,11 @@ contract StakingPoolBase is ERC20Upgradeable, OwnableUpgradeable, PausableUpgrad
      * @param assetIndex Latest asset index, reflective of current conditions
      * @param userIndex User's last updated index
      */
-    function _calculateRewards(uint256 principalUserBalance, uint256 assetIndex, uint256 userIndex) internal pure returns(uint256){
+    function _calculateRewards(uint256 principalUserBalance, uint256 assetIndex, uint256 userIndex) internal view returns(uint256){
         
         if(_isAutoCompounding){
 
-            return (principalUserBalance * assetIndex) / userIndex;
+            return (principalUserBalance * assetIndex) / userIndex;     ///@audit precision
 
         } else{
 
