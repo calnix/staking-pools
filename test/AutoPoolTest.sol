@@ -111,15 +111,21 @@ abstract contract State9 is StateZero {
 }
 
 //Note: Pool deployed, to be configured. 
-contract StateZeroTest is StateZero {
+contract State9Test is State9 {
 
 
     function testOwnerCanConfig() public {
 
-        vm.prank(owner);
 
-        assertEq(stakingPool._startTime(), 0);
-        assertEq(stakingPool._endTime(), 10);   
+        vm.prank(userA);
+        stakingPool.claim(userA, type(uint256).max);
+
+        vm.prank(userB);
+        stakingPool.claim(userB, type(uint256).max);
+
+        assertEq(baseToken.balanceOf(userA), 0.625 ether); //3.328e16
+        assertEq(baseToken.balanceOf(userA), 0.625 ether); //3.328e16
+
     }
 
 
