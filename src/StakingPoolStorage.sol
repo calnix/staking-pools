@@ -17,7 +17,7 @@ abstract contract StakingPoolStorage {
 
     // Tracks unclaimed rewards accrued for each user
     mapping(address user => uint256 userindex) internal _userIndexes;
-    
+
     // Tracks unclaimed rewards accrued for each user
     mapping(address user => uint256 accruedRewards) internal _accruedRewards;
     

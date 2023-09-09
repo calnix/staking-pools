@@ -19,3 +19,9 @@ for linear, it comes down to time exposure.
 - eps is fixed. 
 - ++accruedPerShare -> emissionForPastPeriodPerShare
 - 
+
+
+
+
+Pool cannot be reused
+- cos cannot clean out mappings, 

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import {AutoPool} from "../src/AutoPool.sol";
+import {StakingPoolIndex} from "../src/StakingPoolIndex.sol";
 
 import "openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -10,7 +10,7 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC
 
 abstract contract StateZero is Test {
     ERC20Mock public baseToken;
-    AutoPool public stakingPool;
+    StakingPoolIndex public stakingPool;
 
     address public userA;
     address public userB;
@@ -28,7 +28,7 @@ abstract contract StateZero is Test {
     uint256 public userCPrinciple;
 
     //EVENTS
-    event PoolInitiated(address indexed rewardToken, bool isCompounding, uint256 emission);
+    event PoolInitiated(address indexed rewardToken, bool isAutoCompounding, uint256 emission);
     event AssetIndexUpdated(address indexed asset, uint256 index);
     event UserIndexUpdated(address indexed user, uint256 index);
 
@@ -58,7 +58,7 @@ abstract contract StateZero is Test {
         
         //deploy contracts
         baseToken = new ERC20Mock();
-        stakingPool = new AutoPool();
+        stakingPool = new StakingPoolIndex();
         stakingPool.initialize(IERC20(baseToken), IERC20(baseToken), dummyVault, owner, "StakedToken", "stkBT");
 
         //mint tokens
@@ -84,7 +84,7 @@ abstract contract StateZero is Test {
         vm.prank(dummyVault);
         baseToken.approve(address(stakingPool), rewards);
 
-        vm.warp(0);
+        vm.warp(1);
         vm.prank(owner);
         stakingPool.setUp(duration, rewards, true);
 
@@ -94,27 +94,30 @@ abstract contract StateZero is Test {
         vm.prank(userB);
         stakingPool.stake(userB, userBPrinciple);
 
-        assertEq(stakingPool._startTime(), 0);
-        assertEq(stakingPool._endTime(), 10);
+        assertEq(stakingPool._startTime(), 1);
+        assertEq(stakingPool._endTime(), 11);
 
     }
 }
 
-abstract contract State9 is StateZero {
 
-    function setUp() public override {
+contract StateZeroTest is StateZero {
+    
+}
+
+abstract contract StateT10 is StateZero {
+
+    function setUp() public virtual override {
         super.setUp();
 
-        vm.warp(9);
-
+        vm.warp(10);
     }
 }
 
 //Note: Pool deployed, to be configured. 
-contract State9Test is State9 {
+contract StateT10Test is StateT10 {
 
-
-    function testOwnerCanConfig() public {
+    function testPhase1Rewards() public {
 
 
         vm.prank(userA);
@@ -123,37 +126,35 @@ contract State9Test is State9 {
         vm.prank(userB);
         stakingPool.claim(userB, type(uint256).max);
 
-        assertEq(baseToken.balanceOf(userA), 0.625 ether); //3.328e16
-        assertEq(baseToken.balanceOf(userA), 0.625 ether); //3.328e16
+        assertEq(baseToken.balanceOf(userA), 5.625 ether); //correct
+        assertEq(baseToken.balanceOf(userB), 3.375 ether); //correct
+
+        assertEq(stakingPool._totalRewardsStaked(), 0 ether);
+        assertEq(stakingPool._assetIndex(), 1.1125e18); 
 
     }
-
-
 }
 
-/*
+abstract contract StateT11 is StateT10 {
 
-abstract contract State11 is State9 {
-
-    function setUp() public override {
+    function setUp() public virtual override {
         super.setUp();
-
-        //uint256 newindex = stakingPool._calculateAssetIndex(1e18, stakingPool._emissionPerSecond(), stakingPool._lastUpdateTimestamp(), 80 ether);
-        //console2.log(newindex);
 
         vm.prank(userC);
         stakingPool.stake(userC, userCPrinciple);
         
         assertEq(stakingPool._totalRewardsStaked(), 9 ether);
         assertEq(stakingPool.totalSupply(), userAPrinciple+userBPrinciple+userCPrinciple);
-        assertEq(stakingPool._assetIndex(), 1.125e17);
+        assertEq(stakingPool._assetIndex(), 1.1125e18);
         
-
-        vm.warp(11);
+        // staking ended
+        vm.warp(12);
     }
 }
 
-contract State11Test is State11 {
+
+
+contract StateT11Test is StateT11 {
 
         function testRewards() public {
 
@@ -166,10 +167,83 @@ contract State11Test is State11 {
         vm.prank(userC);
         stakingPool.claim(userC, type(uint256).max);
 
-        assertEq(stakingPool._assetIndex(), 6.646e14);
+        assertEq(stakingPool._assetIndex() / 1e15, 1.119e18 / 1e15);      //index = 1.119e18
 
-        assertEq(baseToken.balanceOf(userC), 0.5 ether);
-        assertEq(baseToken.balanceOf(userB), 0.1875 ether); //1.997e16
-        assertEq(baseToken.balanceOf(userA), 0.3125 ether); //3.328e16
+        //division for rounding 
+        assertEq(baseToken.balanceOf(userA) / 1e15, 5.954e18 / 1e15);       
+        assertEq(baseToken.balanceOf(userB) / 1e15, 3.572e18 / 1e15);
+        assertEq(baseToken.balanceOf(userC) / 1e14, 4.733e17 / 1e14);
+
+        //rewards earned A: 5.625 + 0.329142 = 5.954e18
+        //rewards earned B: 3.375 + 0.197485 = 3.572e18
+        //rewards earned C: 0.473373 = 4.733e17
     }
-}*/
+}
+
+
+/**
+    Scenario: Compounding Mode
+
+    ** Pool info **
+    - stakingStart => t1
+    - endStart => t11
+    - duration: 10 seconds
+    - emissionPerSecond: 1e18 (1 token per second)
+    
+    ** Phase 1: t1 - t10 **
+
+    At t1: 
+    userA and userB stake all of their principle
+    - userA principle: 50 tokens (50e18)
+    - userB principle: 30 tokens (30e18)
+
+    totalStaked at t1 => 80 tokens
+
+    At t10:
+    calculating rewards:
+    - timeDelta: 10 - 1 = 9 seconds 
+    - rewards emitted since start: 9 * 1 = 9 tokens
+    - rewardPerShare: 9e18 / 80e18 = 0.1125 
+
+    rewards earned by A: 
+    A_principle * rewardPerShare = 50 * 0.1125 = 5.625 rewards
+
+    rewards earned by B: 
+    B_principle * rewardPerShare = 30 * 0.1125 = 3.375 rewards
+
+    
+    ** Phase 1: t10 - t11 **
+
+    At t10:
+    userC stakes 80 tokens
+    - Staking ends at t11
+    - only 1 token left to be emitted to all stakers
+
+    Principle staked
+    - userA: 50 + 5.625 = 55.625e18
+    - userB: 30 + 3.375 = 33.375e18
+    - userC: 80e18
+
+    totalStaked at t10 => 169e18 (80 + 9 + 80)tokens
+
+    At11:
+    calculating earned:
+    - timeDelta: 11 - 10 = 1 second
+    - rewards emitted since LastUpdateTimestamp: 1 * 1 = 1 token
+    - rewardPerShare: 1e18 / 169e18 = 0.00591716
+
+    rewards earned by A: 
+    A_principle * rewardPerShare = 55.625e18 * 0.00591716 = 0.329142 rewards
+
+    rewards earned by B: 
+    B_principle * rewardPerShare = 33.375e18 * 0.00591716 = 0.197485 rewards
+    
+    rewards earned by C: 
+    C_principle * rewardPerShare = 80e18 * 0.00591716 = 0.473372 rewards
+    
+
+
+
+
+
+ */

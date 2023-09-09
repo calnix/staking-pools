@@ -14,7 +14,7 @@ import {UUPSUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/prox
 /// @notice Stake TokenA, earn Token A as rewards
 /// @dev Rewards are held in rewards vault, not in the staking pool. Necessary approvals are expected.
 /// @dev Pool is only compatible with tokens of 18 dp precision.
-contract AutoPool is ERC20Upgradeable, OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable, StakingPoolStorage {
+contract StakingPoolIndex is ERC20Upgradeable, OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable, StakingPoolStorage {
     using SafeERC20 for IERC20;
 
     // version number
@@ -268,12 +268,12 @@ contract AutoPool is ERC20Upgradeable, OwnableUpgradeable, PausableUpgradeable, 
     /**
      * @dev Calculates latest asset index, reflective of emissions thus far
      * @param currentAssetIndex Latest asset index
-     * @param _emissionPerSecond Reward tokens emitted per second (in wei)
-     * @param _lastUpdateTimestamp Time at which previous update occured 
+     * @param emissionPerSecond Reward tokens emitted per second (in wei)
+     * @param lastUpdateTimestamp Time at which previous update occured 
      * @param totalBalance Total staked supply 
      * @return newassetIndex Latest asset index
      */
-    function _calculateAssetIndex(uint256 currentAssetIndex, uint256 _emissionPerSecond, uint128 _lastUpdateTimestamp, uint256 totalBalance) public returns(uint256) {
+    function _calculateAssetIndex(uint256 currentAssetIndex, uint256 emissionPerSecond, uint128 lastUpdateTimestamp, uint256 totalBalance) public returns(uint256) {
 
         if(
             _emissionPerSecond == 0 ||                        // 0 emissions. setup() not executed. 
@@ -285,13 +285,16 @@ contract AutoPool is ERC20Upgradeable, OwnableUpgradeable, PausableUpgradeable, 
         }
 
         uint256 currentTimestamp = block.timestamp > _endTime ? _endTime : block.timestamp;
-        uint256 timeDelta = currentTimestamp - _lastUpdateTimestamp;
+        uint256 timeDelta = currentTimestamp - lastUpdateTimestamp;
 
         if(_isAutoCompounding){
             
             _totalRewardsStaked += _emissionPerSecond * timeDelta;
 
-            return (_emissionPerSecond * timeDelta * currentAssetIndex) / totalBalance; ///@audit precision
+            uint256 emissionPerShareForPeriod = emissionPerSecond * timeDelta * 10**PRECISION / totalBalance;
+            uint256 nextAssetIndex = (emissionPerShareForPeriod + 1e18) * currentAssetIndex / 10**PRECISION;
+
+            return nextAssetIndex; ///@audit precision
             
         }else{
             return ((_emissionPerSecond * timeDelta * 10**PRECISION) / totalBalance) + currentAssetIndex;
@@ -309,7 +312,7 @@ contract AutoPool is ERC20Upgradeable, OwnableUpgradeable, PausableUpgradeable, 
         
         if(_isAutoCompounding){
 
-            return (principalUserBalance * assetIndex) / userIndex;     ///@audit precision
+            return (principalUserBalance * ((assetIndex * 10**PRECISION / userIndex) - 1e18)) / 10**PRECISION;     ///@audit precision
 
         } else{
 
