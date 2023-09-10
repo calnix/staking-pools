@@ -8,6 +8,49 @@ import { OwnableUpgradeable } from "../../src/StakingPoolShares.sol";
 import "openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
+/**
+    Scenario: Compounding Mode
+
+    ** Pool info **
+    - stakingStart => t1
+    - stakingEnd => t13
+    - duration: 12 seconds
+    - emissionPerSecond: 1e18 (1 token per second)
+    
+    ** Phase 1: t0 - t1 **
+    - pool deployed
+    - cannot stake/claim/unstake. 
+    - pool activates on t1
+
+    ** Phase 2: t1 - t2 **
+    - pool is active.
+    - 1 reward harvested. 
+    - since no stakers, this reward is harvested but forgone.
+    - tracked as _totalRewardsHarvested
+
+    ** Phase 2: t2 - t12 (10 seconds)**
+    - userA stakes 10e18 tokens.
+    - userA get 10e18 shares.
+    - _totalRewards: 10e18
+    - _totalRewardsHarvested: 11e18  (1 from the earlier discarded reward)
+
+    -> userA assets: 20
+    -> userA rewards: 10
+
+    ** Phase 2: t12 - t13 **
+    - userB stakes 10e18 tokens.
+    - userB get 5e18 shares.
+
+    ** Phase 3: t13 **
+    - final 1 reward distribution to both users.
+    
+    -> userA assets: 20.667
+    -> userA rewards: 10.667
+
+    -> userB assets: 10.333
+    -> userB rewards: 0.333
+    
+ */
 
 abstract contract StateZero is Test {
     ERC20Mock public baseToken;
@@ -363,69 +406,4 @@ contract StateT13Test is StateT13 {
         assertGe(rewardsHarvested, rewardsEmitted);
         assertEq(delta, 1e18);      
     }
-
 }
-
-
-/**
-    Scenario: Compounding Mode
-
-    ** Pool info **
-    - stakingStart => t1
-    - endStart => t11
-    - duration: 10 seconds
-    - emissionPerSecond: 1e18 (1 token per second)
-    
-    ** Phase 1: t1 - t10 **
-
-    At t1: 
-    userA and userB stake all of their principle
-    - userA principle: 50 tokens (50e18)
-    - userB principle: 30 tokens (30e18)
-
-    totalStaked at t1 => 80 tokens
-
-    At t10:
-    calculating rewards:
-    - timeDelta: 10 - 1 = 9 seconds 
-    - rewards emitted since start: 9 * 1 = 9 tokens
-    - rewardPerShare: 9e18 / 80e18 = 0.1125 
-
-    rewards earned by A: 
-    A_principle * rewardPerShare = 50 * 0.1125 = 5.625 rewards
-
-    rewards earned by B: 
-    B_principle * rewardPerShare = 30 * 0.1125 = 3.375 rewards
-
-    
-    ** Phase 1: t10 - t11 **
-
-    At t10:
-    userC stakes 80 tokens
-    - Staking ends at t11
-    - only 1 token left to be emitted to all stakers
-
-    Principle staked
-    - userA: 50 + 5.625 = 55.625e18
-    - userB: 30 + 3.375 = 33.375e18
-    - userC: 80e18
-
-    totalStaked at t10 => 169e18 (80 + 9 + 80)tokens
-
-    At11:
-    calculating earned:
-    - timeDelta: 11 - 10 = 1 second
-    - rewards emitted since LastUpdateTimestamp: 1 * 1 = 1 token
-    - rewardPerShare: 1e18 / 169e18 = 0.00591716
-
-    rewards earned by A: 
-    A_principle * rewardPerShare = 55.625e18 * 0.00591716 = 0.329142 rewards
-
-    rewards earned by B: 
-    B_principle * rewardPerShare = 33.375e18 * 0.00591716 = 0.197485 rewards
-    
-    rewards earned by C: 
-    C_principle * rewardPerShare = 80e18 * 0.00591716 = 0.473372 rewards
-    
-
- */
