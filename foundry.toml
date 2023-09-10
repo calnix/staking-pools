@@ -15,7 +15,7 @@ evm_version = "paris"
 [fmt]
   bracket_spacing = true
   int_types = "long"
-  line_length = 120
+  line_length = 300
   multiline_func_header = "all"
   number_underscore = "thousands"
   quote_style = "double"

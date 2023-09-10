@@ -25,22 +25,22 @@ abstract contract StakingPoolStorage {
     mapping(address user => uint256 accruedRewards) internal _claimedRewards;
 
     // Asset data
-    uint256 public _assetIndex;
-    uint128 public _emissionPerSecond;
-    uint128 public _lastUpdateTimestamp;
+    uint256 internal _assetIndex;
+    uint128 internal _emissionPerSecond;
+    uint128 internal _lastUpdateTimestamp;
 
     // Distribution Data
-    bool internal _isCompounding;              // enable compounding feature
-    bool internal _isAutoCompounding;              // enable compounding feature
+    bool internal _isAutoCompounding;           // enable compounding feature
+    bool internal _isSetUp;                     // setUp() ran/or not 
 
-    uint128 public _startTime;                   // start time
-    uint128 public _endTime;                    // end time
-    uint256 public _totalRewardsStaked;        // total rewards unclaimed within pool
+    uint128 internal _startTime;                  // start time
+    uint128 internal _endTime;                    // end time
+    uint256 internal _totalRewardsStaked;         // total rewards unclaimed within pool
 
 
     // EVENTS
     event PoolInitiated(address indexed rewardToken, bool isCompounding, uint256 emission);
-    event AssetIndexUpdated(address indexed asset, uint256 index);
+    event AssetIndexUpdated(address indexed asset, uint256 oldIndex, uint256 newIndex);
     event UserIndexUpdated(address indexed user, uint256 index);
 
     event Staked(address indexed from, address indexed onBehalfOf, uint256 amount);
