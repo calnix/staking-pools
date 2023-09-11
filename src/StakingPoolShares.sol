@@ -8,6 +8,9 @@ import { OwnableUpgradeable } from "openzeppelin-contracts-upgradeable/contracts
 import { PausableUpgradeable } from "openzeppelin-contracts-upgradeable/contracts/utils/PausableUpgradeable.sol";
 import { UUPSUpgradeable } from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
+
+// Note: WIP - Compounding mode works. Working on linear mode.
+
 contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
 
@@ -46,7 +49,6 @@ contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgra
 
     event Recovered(address indexed token, uint256 amount);
 
-    event ErrorLog(uint256);
     /**
      * @notice Initializes the Pool
      * @dev To be called by proxy on deployment
@@ -91,7 +93,7 @@ contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgra
 
         //get rewards from vault
         //should only run once, per block
-        _harvest();   //
+        _harvest();  
 
         //calculate new shares
         uint256 newShares;
@@ -103,7 +105,9 @@ contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgra
                 newShares = amount; //1:1 ratio initally
             }
 
-        } else {  } //linear
+        } else {  //linear
+            newShares = amount;
+        } 
 
         //update memory
         user.principle += amount;
@@ -132,10 +136,16 @@ contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgra
         uint256 userTotalAssets;
         uint256 userTotalRewards;
 
-        // userTotalPosition = principle + rewards
-        userTotalAssets = (user.shares * (_totalRewards + _totalStaked)) / _totalShares;
-        // remove principal
-        userTotalRewards = userTotalAssets - user.principle;
+        if(_isAutoCompounding){
+            // userTotalPosition = principle + rewards
+            userTotalAssets = (user.shares * (_totalRewards + _totalStaked)) / _totalShares;
+            // remove principal
+            userTotalRewards = userTotalAssets - user.principle;
+
+        }else{
+            // linear: shares == principle
+            userTotalRewards = user.shares * _totalRewards / _totalShares;
+        }
 
         // non-zero rewards
         if (userTotalRewards == 0) {

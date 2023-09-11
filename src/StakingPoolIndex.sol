@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.20;
 
-import { StakingPoolStorage } from "./StakingPoolStorage.sol";
+import { StakingPoolIndexStorage } from "./StakingPoolIndexStorage.sol";
 import { SafeERC20, IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import { ERC20Upgradeable } from "openzeppelin-contracts-upgradeable/contracts/token/ERC20/ERC20Upgradeable.sol";
@@ -19,7 +19,7 @@ contract StakingPoolIndex is
     OwnableUpgradeable,
     PausableUpgradeable,
     UUPSUpgradeable,
-    StakingPoolStorage
+    StakingPoolIndexStorage
 {
     using SafeERC20 for IERC20;
 
@@ -71,7 +71,7 @@ contract StakingPoolIndex is
         require(_emissionPerSecond > 0, "reward rate = 0");
         require(_emissionPerSecond * duration <= REWARD_TOKEN.balanceOf(REWARDS_VAULT), "reward amount > balance");
 
-        _startTime = startTime;
+        _startTime = _lastUpdateTimestamp = startTime;
         _endTime = startTime + duration;
 
         if (isAutoCompounding) {
@@ -138,7 +138,10 @@ contract StakingPoolIndex is
 
         //update state
         _claimedRewards[msg.sender] += amountToClaim;
-        _totalRewardsStaked -= amountToClaim;
+
+        if(_isAutoCompounding){
+            _totalRewardsStaked -= amountToClaim;
+        }
 
         //transfer
         REWARD_TOKEN.safeTransferFrom(REWARDS_VAULT, to, amountToClaim);

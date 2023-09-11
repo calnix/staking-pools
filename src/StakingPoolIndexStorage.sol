@@ -6,7 +6,7 @@ import {SafeERC20, IERC20} from "openzeppelin-contracts/contracts/token/ERC20/ut
 /// @title Storage contract for staking pool
 /// @author Calnix
 /// @dev Meant to be inherited by pool logic
-abstract contract StakingPoolStorage {
+abstract contract StakingPoolIndexStorage {
     using SafeERC20 for IERC20;
  
     IERC20 public STAKED_TOKEN;  
