@@ -1,4 +1,4 @@
-## Staking Pools
+## Single-sided Staking Pools
 A repo of single-sided staking pools.
 
 Repo contains staking pools utilising 2 different mechanisms: 
