@@ -13,6 +13,16 @@ StakingPoolShares
 - has auto-compounding baked into it.
 > If anyone has an elegant suggestion for how this approach can allow for both auto-compounding and linear distribution, please let me know.
 
+
+##### Other contracts
+These contracts are not of heavy focus of this repo, but were created to illustrate functionality or in a supporting capacity.
+
+- Factory: to batch deploy vault, proxy and pool via create2.
+- Rewards Vault: simple contract to serve as illustration
+- Proxy: to reflect UUPS upgradability
+
+Disclaimer: Testing for these contracts were somewhat quick and dirty.
+
 ## Design
 
 I wanted the pools to be deployed allowing for set & forget approach; meaning they could be deployed in advance, configured to activate some time in the future.
@@ -52,16 +62,16 @@ For the user that is subject to causing this change, by either deposit/withdraw/
 Essentially, we 'close the book' on the past, and begin accounting for a new period due to changes. 
 
 ```solidity
-    _calculateAssetIndex(){
-        ...
-        nextAssetIndex = ((emissionPerSecond * timeDelta * 10 ** PRECISION) / totalBalance) + currentAssetIndex;
-        ...
-    }
+_calculateAssetIndex(){
+    ...
+    nextAssetIndex = ((emissionPerSecond * timeDelta * 10 ** PRECISION) / totalBalance) + currentAssetIndex;
+    ...
+}
 
-    _calculateRewards(){
-        ...
-        (principalUserBalance * (assetIndex - userIndex)) / 10 ** PRECISION;
-    }
+_calculateRewards(){
+    ...
+    (principalUserBalance * (assetIndex - userIndex)) / 10 ** PRECISION;
+}
 
 ```
 
@@ -101,18 +111,198 @@ If we want to repeatedly stack, or compound interest as it were, the addition of
 Otherwise you would get a final amount that can be less than what your principle started with originally.
 
 ```solidity
-            _calculateAssetIndex(){
-                ...
-                uint256 timeDelta = currentTimestamp - lastUpdateTimestamp;
+_calculateAssetIndex(){
+    ...
+    uint256 timeDelta = currentTimestamp - lastUpdateTimestamp;
 
-                ...
-                uint256 emissionPerShareForPeriod = emissionPerSecond * timeDelta * 10 ** PRECISION / totalBalance;
-                nextAssetIndex = (emissionPerShareForPeriod + 1e18) * currentAssetIndex / 10 ** PRECISION;
+    ...
+    uint256 emissionPerShareForPeriod = emissionPerSecond * timeDelta * 10 ** PRECISION / totalBalance;
+    nextAssetIndex = (emissionPerShareForPeriod + 1e18) * currentAssetIndex / 10 ** PRECISION;
 
-                ...
-            }
+    ...
+}
 ```
 
 Notice the addition of 1e18 to emissionPerShareForPeriod, this is reflective of our explanation earlier.
 
 ## Testing
+
+### StakingPoolIndex: Compounding mode
+
+####    Scenario: Compounding Mode
+
+    ** Pool info **
+    - stakingStart => t1
+    - endStart => t11
+    - duration: 10 seconds
+    - emissionPerSecond: 1e18 (1 token per second)
+    
+    ** Phase 1: t1 - t10 **
+
+    At t1: 
+    userA and userB stake all of their principle
+    - userA principle: 50 tokens (50e18)
+    - userB principle: 30 tokens (30e18)
+
+    totalStaked at t1 => 80 tokens
+
+    At t10:
+    calculating rewards:
+    - timeDelta: 10 - 1 = 9 seconds 
+    - rewards emitted since start: 9 * 1 = 9 tokens
+    - rewardPerShare: 9e18 / 80e18 = 0.1125 
+
+    rewards earned by A: 
+    A_principle * rewardPerShare = 50 * 0.1125 = 5.625 rewards
+
+    rewards earned by B: 
+    B_principle * rewardPerShare = 30 * 0.1125 = 3.375 rewards
+
+    
+    ** Phase 1: t10 - t11 **
+
+    At t10:
+    userC stakes 80 tokens
+    - Staking ends at t11
+    - only 1 token left to be emitted to all stakers
+
+    Principle staked
+    - userA: 50 + 5.625 = 55.625e18
+    - userB: 30 + 3.375 = 33.375e18
+    - userC: 80e18
+
+    totalStaked at t10 => 169e18 (80 + 9 + 80)tokens
+
+    At11:
+    calculating earned:
+    - timeDelta: 11 - 10 = 1 second
+    - rewards emitted since LastUpdateTimestamp: 1 * 1 = 1 token
+    - rewardPerShare: 1e18 / 169e18 = 0.00591716
+
+    rewards earned by A: 
+    A_principle * rewardPerShare = 55.625e18 * 0.00591716 = 0.329142 rewards
+
+    rewards earned by B: 
+    B_principle * rewardPerShare = 33.375e18 * 0.00591716 = 0.197485 rewards
+    
+    rewards earned by C: 
+    C_principle * rewardPerShare = 80e18 * 0.00591716 = 0.473372 rewards
+
+####  Scenario: Linear Mode
+
+    ** Pool info **
+    - pool startTime: t1
+    - stakingStart: t2
+    - pool endTime: t12
+    - duration: 11 seconds
+    - emissionPerSecond: 1e18 (1 token per second)
+    
+    ** Phase 1: t0 - t1 **
+    - pool deployed
+    - pool inactive
+
+    ** Phase 1: t1 - t2 **
+    - pool active
+    - no stakers
+    - 1 reward emitted in this period, that is discarded.
+
+    ** Phase 1: t2 - t11 **
+    - userA and userB stake at t2
+    - 9 rewards emitted in period
+
+        At t2: 
+        userA and userB stake all of their principle
+        - userA principle: 50 tokens (50e18)
+        - userB principle: 30 tokens (30e18)
+
+        totalStaked at t2 => 80 tokens
+
+        At t11:
+        calculating rewards:
+        - timeDelta: 11 - 2 = 9 seconds 
+        - rewards emitted since start: 9 * 1 = 9 tokens
+        - rewardPerShare: 9e18 / 80e18 = 0.1125 
+
+        rewards earned by A: 
+        A_principle * rewardPerShare = 50 * 0.1125 = 5.625 rewards
+
+        rewards earned by B: 
+        B_principle * rewardPerShare = 30 * 0.1125 = 3.375 rewards
+
+    
+    ** Phase 1: t11 - t12 **
+    - userC stakes
+    - final reward of 1 reward token is emitted at t12.
+    - Staking ends at t12
+    
+        At t11:
+        userC stakes 80 tokens
+        
+        - only 1 token left to be emitted to all stakers
+
+        Principle staked
+        - userA: 50 + 5.625 = 55.625e18
+        - userB: 30 + 3.375 = 33.375e18
+        - userC: 80e18
+
+        totalStaked at t10 => 169e18 (80 + 9 + 80)tokens
+
+        At12:
+        calculating earned:
+        - timeDelta: 12 - 11 = 1 second
+        - rewards emitted since LastUpdateTimestamp: 1 * 1 = 1 token
+        - rewardPerShare: 1e18 / 160e18 = 0.00625
+
+        userA additional rewards: 50 * 0.00625 = 0.3125
+        userA total rewards: 5.625 + 0.3125 = 5.9375
+
+        userB additional rewards: 30 * 0.00625 = 0.1875
+        userB total rewards: 3.375 + 0.1875 = 3.5625
+
+        userC additional rewards: 80 * 0.00625 = 0.5
+        userC total rewards: 0 + 0.5 = 0.5
+
+
+### StakingPoolShares: Compounding mode
+
+    Scenario: Compounding Mode
+
+    ** Pool info **
+    - stakingStart => t1
+    - stakingEnd => t13
+    - duration: 12 seconds
+    - emissionPerSecond: 1e18 (1 token per second)
+    
+    ** Phase 1: t0 - t1 **
+    - pool deployed
+    - cannot stake/claim/unstake. 
+    - pool activates on t1
+
+    ** Phase 2: t1 - t2 **
+    - pool is active.
+    - 1 reward harvested. 
+    - since no stakers, this reward is harvested but forgone.
+    - tracked as _totalRewardsHarvested
+
+    ** Phase 2: t2 - t12 (10 seconds)**
+    - userA stakes 10e18 tokens.
+    - userA get 10e18 shares.
+    - _totalRewards: 10e18
+    - _totalRewardsHarvested: 11e18  (1 from the earlier discarded reward)
+
+    -> userA assets: 20
+    -> userA rewards: 10
+
+    ** Phase 2: t12 - t13 **
+    - userB stakes 10e18 tokens.
+    - userB get 5e18 shares.
+
+    ** Phase 3: t13 **
+    - final 1 reward distribution to both users.
+    
+    -> userA assets: 20.667
+    -> userA rewards: 10.667
+
+    -> userB assets: 10.333
+    -> userB rewards: 0.333
+    
