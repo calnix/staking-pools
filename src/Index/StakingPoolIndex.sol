@@ -9,7 +9,7 @@ import { OwnableUpgradeable } from "openzeppelin-contracts-upgradeable/contracts
 import { PausableUpgradeable } from "openzeppelin-contracts-upgradeable/contracts/utils/PausableUpgradeable.sol";
 import { UUPSUpgradeable } from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
-/// @title A single-sided staking pool that is upgradeable
+/// @title A single-sided staking pool that is UUPS upgradeable
 /// @author Calnix
 /// @notice Stake TokenA, earn Token A as rewards
 /// @dev Rewards are held in rewards vault, not in the staking pool. Necessary approvals are expected.

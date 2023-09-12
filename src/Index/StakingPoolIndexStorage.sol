@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity 0.8.20;
 
 import {SafeERC20, IERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
-/// @title Storage contract for staking pool
+/// @title Storage contract for staking pool of index type
 /// @author Calnix
 /// @dev Meant to be inherited by pool logic
 abstract contract StakingPoolIndexStorage {

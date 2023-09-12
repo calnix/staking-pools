@@ -8,6 +8,11 @@ import { OwnableUpgradeable } from "openzeppelin-contracts-upgradeable/contracts
 import { PausableUpgradeable } from "openzeppelin-contracts-upgradeable/contracts/utils/PausableUpgradeable.sol";
 import { UUPSUpgradeable } from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
+/// @title A single-sided staking pool that is UUPS upgradeable.
+/// @author Calnix
+/// @notice Stake TokenA, earn Token A as rewards. Auto-compounds by virtue of share and ex-rate approach. 
+/// @dev Rewards are held in rewards vault, not in the staking pool. Necessary approvals are expected.
+/// @dev Pool is only compatible with tokens of 18 dp precision.
 
 // Note: WIP - Compounding mode works. Working on linear mode.
 
@@ -20,7 +25,6 @@ contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgra
     struct UserInfo {
         uint256 principle;      //denoted in asset
         uint256 shares;         //total shares
-        uint256 UserlastUpdateTimestamp;
     }
 
     mapping(address user => UserInfo userInfo) internal _users;
@@ -32,9 +36,9 @@ contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgra
     uint256 internal _totalRewardsHarvested;     //increments from start time
     
     // Distribution info
-    uint256 internal _startTime;                //for set&forget
+    uint256 internal _startTime;                 //for set&forget
     uint256 internal _endTime;
-    uint256 internal _lastUpdateTimestamp;           //for calculating pendings rewards
+    uint256 internal _lastUpdateTimestamp;       //for calculating pending rewards
     uint256 internal _emissionPerSecond;
     bool internal _isAutoCompounding;
     bool internal _isSetUp;
@@ -42,11 +46,9 @@ contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgra
     // EVENTS
     event PoolInitiated(address indexed rewardToken, bool isCompounding, uint256 emission);
     event Staked(address indexed from, address indexed onBehalfOf, uint256 amount);
-    event Unstaked(address indexed from, address indexed to, uint256 amount);
-    
+    event Unstaked(address indexed from, address indexed to, uint256 amount);    
     event RewardsHarvested(address indexed rewardToken, uint256 amount);
     event RewardsClaimed(address indexed from, address indexed to, uint256 amount);
-
     event Recovered(address indexed token, uint256 amount);
 
     /**
@@ -97,17 +99,12 @@ contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgra
 
         //calculate new shares
         uint256 newShares;
-        if(_isAutoCompounding){
 
-            if (_totalShares > 0) {
-                newShares = (amount * _totalShares) / (_totalRewards + _totalStaked);
-            } else {
-                newShares = amount; //1:1 ratio initally
-            }
-
-        } else {  //linear
-            newShares = amount;
-        } 
+        if (_totalShares > 0) {
+            newShares = (amount * _totalShares) / (_totalRewards + _totalStaked);
+        } else {
+            newShares = amount; //1:1 ratio initally
+        }
 
         //update memory
         user.principle += amount;
@@ -124,6 +121,7 @@ contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgra
         emit Staked(msg.sender, onBehalfOf, amount);
     }
 
+    // only to claim accrued rewards. principal disregarded.
     function claim(address to, uint256 amount) external {
         require(block.timestamp >= _startTime, "Not started");
         require(amount > 0 && to > address(0), "Invalid params");
@@ -136,16 +134,10 @@ contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgra
         uint256 userTotalAssets;
         uint256 userTotalRewards;
 
-        if(_isAutoCompounding){
-            // userTotalPosition = principle + rewards
-            userTotalAssets = (user.shares * (_totalRewards + _totalStaked)) / _totalShares;
-            // remove principal
-            userTotalRewards = userTotalAssets - user.principle;
-
-        }else{
-            // linear: shares == principle
-            userTotalRewards = user.shares * _totalRewards / _totalShares;
-        }
+        // userTotalPosition = principle + rewards
+        userTotalAssets = (user.shares * (_totalRewards + _totalStaked)) / _totalShares;
+        // remove principal
+        userTotalRewards = userTotalAssets - user.principle;
 
         // non-zero rewards
         if (userTotalRewards == 0) {
@@ -172,7 +164,7 @@ contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgra
         emit RewardsClaimed(msg.sender, to, amountToClaim);
     }
 
-    // user specifies principle as amount, not shares; user should not need to do math.
+    // user specifies principle as asset amount, not shares; user should not need to do math.
     function unstake(address onBehalfOf, uint256 amount) external {
         require(block.timestamp >= _startTime, "Not started");
         require(amount > 0 && onBehalfOf > address(0), "Invalid params");
@@ -186,7 +178,6 @@ contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgra
         uint256 amountInShares;
         if(_totalShares > 0){
             amountInShares = amountToUnstake * _totalShares / (_totalRewards + _totalStaked);
-
         }else{
             amountInShares = amountToUnstake;
         }
@@ -296,7 +287,7 @@ contract StakingPoolShares is OwnableUpgradeable, PausableUpgradeable, UUPSUpgra
     //////////////////////////////////////////////////////////////*/
 
     ///@dev override _authorizeUpgrade with onlyOwner for UUPS compliant implementation
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner { }
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     /*//////////////////////////////////////////////////////////////
                                 RECOVER
