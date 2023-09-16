@@ -5,6 +5,8 @@ Repo contains staking pools utilising 2 different mechanisms:
 1) StakingPoolIndex: the index mechanism, similar to lending protocols for tracking interest accumulation
 2) StakingPoolShares: vault shares and ex-rate. auto-compounding is implemented naturally.
 
+> StakingPoolGamified is a variation of StakingPoolIndex
+
 StakingPoolIndex, by nature of the index mechanism allows for a staking pool that can be initialized to be auto-compounding or linear.
 - In auto-compounding mode, a user's previously accrued reawards are taken into account during future distribution of rewards.
 - In linear mode, only users' principle stakes are accounted for during reward distribution.
