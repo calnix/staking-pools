@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import { StakingPoolShares } from "../../src/StakingPoolShares.sol";
-import { OwnableUpgradeable } from "../../src/StakingPoolShares.sol";
+import { StakingPoolShares } from "../../src/Shares/StakingPoolShares.sol";
+import { OwnableUpgradeable } from "../../src/Shares/StakingPoolShares.sol";
 
 import "openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
